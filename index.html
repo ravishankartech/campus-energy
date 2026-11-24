@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Campus Energy Monitor</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--tx:#17212b;--mut:#66727f;--bd:#dfe4ea;--pri:#0f9d73;--red:#d64545;--amb:#d98a0b;--blu:#2f6fdc}
+@media(prefers-color-scheme:dark){:root{--bg:#0e141b;--card:#16202a;--tx:#e8eef4;--mut:#93a1af;--bd:#263544;--pri:#2fcf9f;--red:#ff6b6b;--amb:#f0b34a;--blu:#6fa0ff}}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:5}
+h1{font-size:18px;margin:0}h1 small{display:block;font-weight:400;color:var(--mut);font-size:12px}
+nav button{border:0;background:none;color:var(--mut);padding:8px 14px;font-size:14px;cursor:pointer;border-radius:8px}
+nav button.on{background:var(--pri);color:#fff}
+main{max-width:1100px;margin:0 auto;padding:18px}
+.grid{display:grid;gap:14px}.g4{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}.g3{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.kpi b{font-size:26px;display:block;margin-top:4px}.kpi span{color:var(--mut);font-size:13px}
+.bar{height:8px;border-radius:5px;background:var(--bd);margin-top:10px;overflow:hidden}.bar i{display:block;height:100%;background:var(--pri)}
+.bld{cursor:pointer}.bld.alert{border-color:var(--red)}.bld.alert .bar i{background:var(--red)}
+.bld h3{margin:0 0 4px;font-size:15px}.row{display:flex;justify-content:space-between;color:var(--mut);font-size:13px}
+canvas{width:100%;height:240px;display:block}
+label{display:block;font-size:13px;color:var(--mut);margin:12px 0 4px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+button.pri{background:var(--pri);color:#fff;border:0;padding:11px 18px;border-radius:8px;font-size:15px;cursor:pointer;margin-top:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--bd);vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase}
+.tag{padding:2px 8px;border-radius:10px;font-size:12px;color:#fff;white-space:nowrap}
+.High{background:var(--red)}.Medium{background:var(--amb)}.Low{background:var(--blu)}
+.s-Open{color:var(--red)}.s-InProgress{color:var(--amb)}.s-Resolved{color:var(--pri)}
+.wrap{overflow-x:auto}.msg{margin-top:10px;font-size:14px}.hide{display:none}
+.tip{color:var(--mut);font-size:13px;margin-top:10px}
+a.dl{color:var(--blu);font-size:13px;text-decoration:none;margin-left:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Smart Campus Energy Monitor<small>Live consumption &amp; fault reporting</small></h1>
+  <nav>
+    <button class="on" data-t="dash">Dashboard</button>
+    <button data-t="report">Report Fault</button>
+    <button data-t="faults">Faults <span id="badge"></span></button>
+  </nav>
+</header>
+<main>
+<section id="dash">
+  <div class="grid g4">
+    <div class="card kpi"><span>Campus load now</span><b id="k1">-</b></div>
+    <div class="card kpi"><span>Energy today</span><b id="k2">-</b></div>
+    <div class="card kpi"><span>Cost today</span><b id="k3">-</b></div>
+    <div class="card kpi"><span>Open faults</span><b id="k4">-</b></div>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div class="row" style="margin-bottom:8px"><strong style="color:var(--tx)" id="ctitle">Campus total, last 24 hours</strong>
+      <span><select id="hrs" style="width:auto;padding:4px"><option value="6">6 h</option><option value="24" selected>24 h</option><option value="72">3 days</option></select></span></div>
+    <canvas id="chart"></canvas>
+    <div class="tip">Click a building card to see its own trend and limit line.</div>
+    <button class="pri" style="margin-top:8px;padding:6px 12px;font-size:13px" onclick="pick(0)">Show whole campus</button>
+  </div>
+  <h2 style="font-size:16px;margin:22px 0 10px">Buildings</h2>
+  <div class="grid g3" id="blds"></div>
+  <p class="tip">Cost uses Rs <span id="tar"></span>/kWh. A building above its limit automatically raises a High-priority fault.
+    Export: <a class="dl" href="/api/export/readings.csv">Readings CSV</a><a class="dl" href="/api/export/faults.csv">Faults CSV</a></p>
+</section>
+
+<section id="report" class="hide">
+  <div class="card" style="max-width:560px">
+    <h2 style="margin:0">Report a fault</h2>
+    <p class="tip">Broken light, AC left on, leaking tap, power cut: tell the maintenance team in 20 seconds.</p>
+    <label>Building</label><select id="fb"></select>
+    <label>Category</label>
+    <select id="fc"><option>Electrical</option><option>Energy Wastage</option><option>HVAC</option><option>Water/Plumbing</option><option>Network/IT</option><option>Other</option></select>
+    <label>Priority</label><select id="fp"><option>Low</option><option selected>Medium</option><option>High</option></select>
+    <label>What is wrong? (room / floor / details)</label><textarea id="fd" rows="4" maxlength="500"></textarea>
+    <label>Your name (optional)</label><input id="fr" maxlength="60">
+    <button class="pri" onclick="submitFault()">Submit report</button>
+    <div class="msg" id="fm"></div>
+  </div>
+</section>
+
+<section id="faults" class="hide">
+  <div class="card">
+    <div class="row" style="margin-bottom:10px"><strong style="color:var(--tx)">Fault tracker</strong>
+      <select id="ff" style="width:auto;padding:4px"><option value="">All</option><option>Open</option><option>In Progress</option><option>Resolved</option></select></div>
+    <div class="wrap"><table><thead><tr><th>#</th><th>Building</th><th>Issue</th><th>Priority</th><th>Reported</th><th>Status</th></tr></thead><tbody id="ft"></tbody></table></div>
+  </div>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let sel=0,blds=[];
+const api=(u,o)=>fetch(u,o).then(r=>r.json());
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=t=>new Date(t).toLocaleString([], {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));
+  ['dash','report','faults'].forEach(s=>$(s).classList.toggle('hide',s!==b.dataset.t));
+  if(b.dataset.t==='faults')loadFaults(); if(b.dataset.t==='dash')draw();
+});
+
+async function loadSummary(){
+  const s=await api('/api/summary');
+  $('k1').textContent=s.total_kw+' kW';$('k2').textContent=s.kwh_today+' kWh';
+  $('k3').textContent='Rs '+s.cost_today.toLocaleString();$('k4').textContent=s.open_faults;
+  $('badge').textContent=s.open_faults?'('+s.open_faults+')':'';$('tar').textContent=s.tariff;
+  $('blds').innerHTML=s.buildings.map(b=>{
+    const pct=Math.min(100,Math.round(b.kw/b.limit*100));
+    return `<div class="card bld ${b.alert?'alert':''}" onclick="pick(${b.id})"><h3>${esc(b.name)} ${b.alert?'&#9888;':''}</h3>
+    <div class="row"><span>${b.kw} kW now</span><span>limit ${b.limit}</span></div>
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="row" style="margin-top:8px"><span>Today</span><span>${b.kwh_today} kWh</span></div></div>`}).join('');
+}
+function pick(id){sel=id;const b=blds.find(x=>x.id===id);$('ctitle').textContent=id?b.name+' - consumption':'Campus total';draw();}
+
+async function draw(){
+  const d=await api('/api/readings?hours='+$('hrs').value+(sel?'&building_id='+sel:''));
+  const cv=$('chart'),dpr=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;
+  cv.width=W*dpr;cv.height=H*dpr;const g=cv.getContext('2d');g.scale(dpr,dpr);g.clearRect(0,0,W,H);
+  const cs=getComputedStyle(document.documentElement),mut=cs.getPropertyValue('--mut'),bd=cs.getPropertyValue('--bd'),pri=cs.getPropertyValue('--pri');
+  if(d.length<2){g.fillStyle=mut;g.fillText('Collecting data...',20,30);return}
+  const L=46,B=24,T=10,R=10,max=Math.max(...d.map(p=>p.kw))*1.1,x=i=>L+(W-L-R)*i/(d.length-1),y=v=>T+(H-T-B)*(1-v/max);
+  g.font='11px system-ui';g.fillStyle=mut;g.strokeStyle=bd;g.lineWidth=1;
+  for(let i=0;i<=4;i++){const v=max*i/4;g.beginPath();g.moveTo(L,y(v));g.lineTo(W-R,y(v));g.stroke();g.fillText(Math.round(v)+' kW',4,y(v)+4)}
+  for(let i=0;i<=4;i++){const k=Math.round((d.length-1)*i/4);g.fillText(fmt(d[k].ts).slice(-5),x(k)-14,H-6)}
+  g.beginPath();d.forEach((p,i)=>i?g.lineTo(x(i),y(p.kw)):g.moveTo(x(i),y(p.kw)));
+  g.strokeStyle=pri;g.lineWidth=2;g.stroke();
+  g.lineTo(x(d.length-1),y(0));g.lineTo(x(0),y(0));g.globalAlpha=.12;g.fillStyle=pri;g.fill();g.globalAlpha=1;
+  if(sel){const lim=blds.find(b=>b.id===sel).limit_kw;if(lim<max){g.setLineDash([6,4]);g.strokeStyle='#d64545';g.beginPath();g.moveTo(L,y(lim));g.lineTo(W-R,y(lim));g.stroke();g.setLineDash([]);g.fillStyle='#d64545';g.fillText('limit',L+4,y(lim)-4)}}
+}
+$('hrs').onchange=draw;addEventListener('resize',draw);
+
+async function loadFaults(){
+  const f=await api('/api/faults'+($('ff').value?'?status='+encodeURIComponent($('ff').value):''));
+  $('ft').innerHTML=f.map(r=>`<tr><td>${r.id}</td><td>${esc(r.building)}</td>
+   <td><strong>${esc(r.category)}</strong>${r.source==='Auto'?' <span class="tag Medium">auto</span>':''}<br>${esc(r.description)}<br><small style="color:var(--mut)">by ${esc(r.reporter)}</small></td>
+   <td><span class="tag ${r.priority}">${r.priority}</span></td><td>${fmt(r.created)}</td>
+   <td><select onchange="setStatus(${r.id},this.value)" class="s-${r.status.replace(' ','')}" style="width:auto;padding:4px">
+   ${['Open','In Progress','Resolved'].map(s=>`<option ${s===r.status?'selected':''}>${s}</option>`).join('')}</select></td></tr>`).join('')
+   ||'<tr><td colspan="6">No faults found.</td></tr>';
+}
+$('ff').onchange=loadFaults;
+async function setStatus(id,s){await api('/api/faults/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s})});loadFaults();loadSummary()}
+async function submitFault(){
+  const r=await fetch('/api/faults',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    building_id:+$('fb').value,category:$('fc').value,priority:$('fp').value,description:$('fd').value,reporter:$('fr').value})});
+  const j=await r.json(),m=$('fm');
+  if(r.ok){m.style.color='var(--pri)';m.textContent='Fault #'+j.id+' reported. Maintenance will see it in the tracker.';$('fd').value='';loadSummary()}
+  else{m.style.color='var(--red)';m.textContent=j.error}
+}
+(async()=>{
+  blds=await api('/api/buildings');
+  $('fb').innerHTML=blds.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  await loadSummary();draw();
+  setInterval(()=>{loadSummary();if(!$('dash').classList.contains('hide'))draw()},5000);
+})();
+</script>
+</body>
+</html>
